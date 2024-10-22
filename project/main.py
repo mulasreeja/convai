@@ -3,6 +3,8 @@ from flask import Flask, flash, render_template, request, redirect, url_for, sen
 from google.cloud import texttospeech
 from google.cloud import speech
 import os
+from google.cloud import language_v1
+lang_client = language_v1.LanguageServiceClient()
 
 
 tts_client = texttospeech.TextToSpeechClient()
@@ -81,11 +83,26 @@ def upload_audio():
         result = transcribe_file(file_path)
         flash(result)
 
+        document = language_v1.types.Document(
+        content=result, type_=language_v1.types.Document.Type.PLAIN_TEXT)
+
+        # Detects the sentiment of the text
+        sentiment = lang_client.analyze_sentiment(
+            request={"document": document}
+        ).document_sentiment
+        if sentiment.score>0:
+            sen = "positive"
+        else:
+            sen = "negative"
+        sentiment_result = f"Sentiment analysis,, sentiment: {sen} magnitude: {sentiment.magnitude}, score: {sentiment.score}"
+        print(sentiment_result)
+        
         text_file = os.path.splitext(file_path)[0] + ".txt"
         with open(text_file, "w") as file:
-            file.write(result)
-
-    return render_template('index.html', transcription=result)
+            file.write(result+"\n"+sentiment_result)
+    files = get_files(UPLOAD_FOLDER)
+    audios = get_files(AUDIO_FOLDER)
+    return render_template('index.html', transcription=result, sentiment_analysis=sentiment_result, audios=audios, files=files)
 
 @app.route('/speechtotext/<filename>')
 def view_file(filename):
@@ -114,8 +131,25 @@ def upload_text():
     with open(output_path, "wb") as out:
         out.write(response.audio_content)
         flash(f'Audio content written to file "{output_filename}"')
+          # Sentiment Analysis
+    document = language_v1.types.Document(
+        content=text, type_=language_v1.types.Document.Type.PLAIN_TEXT
+    )
 
-    return redirect('/')
+    # Detects the sentiment of the text
+    sentiment = lang_client.analyze_sentiment(
+        request={"document": document}
+    ).document_sentiment
+    if sentiment.score>0:
+        sen = "positive"
+    else:
+        sen = "negative"
+    # Generate sentiment analysis output
+    sentiment_result = f"Sentiment analysis, sentiment: {sen} ,magnitude: {sentiment.magnitude}, score: {sentiment.score}"
+    print(sentiment_result)
+    files = get_files(UPLOAD_FOLDER)
+    audios = get_files(AUDIO_FOLDER)
+    return render_template('index.html', transcription=text, sentiment_analysis=sentiment_result, audios=audios, files=files)
 
 @app.route('/script.js', methods=['GET'])
 def scripts_js():
